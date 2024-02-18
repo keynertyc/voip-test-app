@@ -12,7 +12,7 @@ class CallRepository
 
     public function getCall($sid)
     {
-        return Call::where('sid', $sid)->first();
+        return Call::where('sid', $sid)->firstOrFail();
     }
 
     public function createCall(Request $request)

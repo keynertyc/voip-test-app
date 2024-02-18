@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WebhookController;
 
@@ -14,10 +13,6 @@ use App\Http\Controllers\WebhookController;
 | be assigned to the "api" middleware group. Make something great!
 |
 */
-
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
 
 Route::post('/voice-webhook', [WebhookController::class, 'handle'])->name('voice-webhook');
 Route::get('/call-options', [WebhookController::class, 'callOptions'])->name('call-options');

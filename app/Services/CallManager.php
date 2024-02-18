@@ -2,124 +2,160 @@
 
 namespace App\Services;
 
-use Twilio\Rest\Client;
-use Twilio\TwiML\VoiceResponse;
+use App\Exceptions\CallHandlerException;
 use App\Repositories\CallRepository;
+use App\Services\Interfaces\CallProviderInterface;
+use App\Services\Interfaces\CallServiceInterface;
+use App\Services\Providers\TwilioProvider;
+use Illuminate\Http\Response;
 
-class CallManager
+class CallManager implements CallServiceInterface
 {
-    protected $twilio;
-    protected $voiceResponse;
+    protected $callProvider;
     protected $callRepository;
     protected $agentNumber;
-    protected $fromNumber;
 
-    public function __construct(CallRepository $callRepository)
+    public static $providers = [
+        'twilio' => TwilioProvider::class,
+    ];
+
+    public function __construct(CallProviderInterface $callProvider, CallRepository $callRepository)
     {
-        $this->twilio = new Client(config('services.twilio.account_sid'), config('services.twilio.auth_token'));
-        $this->voiceResponse = new VoiceResponse();
+        $this->callProvider = $callProvider;
         $this->callRepository = $callRepository;
-        $this->fromNumber = config('services.twilio.from');
         $this->agentNumber = config('services.twilio.agent_number');
     }
 
-    public function processIncomingCall($request)
+    public function processIncomingCall($request): Response
     {
-        $this->callRepository->createCall($request);
+        try {
+            $this->callRepository->createCall($request);
 
-        $gather = $this->voiceResponse->gather([
-                'numDigits' => 1,
-                'action' => route('call-options')
-            ]);
+            $messages = $this->getMessagesForIncomingCall();
+            $numDigits = $this->calculateNumDigits($messages);
 
-        $gather->say('Press 1 to forward call to an agent');
-        $gather->say('Press 2 to leave voicemail');
-
-        return response($this->voiceResponse);
-    }
-
-    public function directCall($request)
-    {
-        if ($request->input('Digits') == 1) {
-            return $this->forwardCall();
-        } elseif ($request->input('Digits') == 2) {
-            return $this->recordVoicemail($request);
-        } else {
-            return $this->finishCall();
+            return $this->callProvider->processIncomingCall($numDigits, route('call-options'), $messages);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
         }
     }
 
-    public function finishCall()
+    public function directCall($request): Response
     {
-        $this->voiceResponse->say('Thank you, goodbye.');
-
-        return response($this->voiceResponse);
+        try {
+            if ($request->input('Digits') == 1) {
+                return $this->forwardCall($this->agentNumber);
+            } elseif ($request->input('Digits') == 2) {
+                return $this->recordVoicemail($request);
+            } else {
+                return $this->finishCall('Thank you, goodbye.');
+            }
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
-    public function forwardCall()
+    public function finishCall(String $message): Response
     {
-        $this->voiceResponse->dial($this->agentNumber);
-
-        return response($this->voiceResponse);
+        try {
+            return $this->callProvider->finishCall($message);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
-    public function recordVoicemail($request)
+    public function forwardCall(String $to): Response
     {
-        // To Update Status in-progress
-        // $call = $this->callRepository->getCall($request->input('CallSid'));
-
-        // if ($call) {
-        //     $status = $this->twilio->calls($call->sid)->fetch()->status;
-        //     $this->callRepository->updateStatus($call, $status);
-        // }
-
-        $this->voiceResponse->record(['recordingStatusCallback' => route('handle-recording')]);
-
-        return response($this->voiceResponse);
+        try {
+            return $this->callProvider->forwardCall($to);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
-    public function processRecording($request)
+    public function recordVoicemail($request): Response
     {
-        $call = $this->callRepository->getCall($request->input('CallSid'));
-
-        $request->merge(['agent_number' => $this->agentNumber]);
-
-        $call = $this->callRepository->updateCall($call, $request);
-
-        $this->sendAgentText($call);
-
-        return response('OK');
+        try {
+            return $this->callProvider->recordVoicemail($request);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
-    public function sendAgentText($call)
+    public function processRecording($request): Response
     {
-        $message = "New voicemail from {$this->agentNumber}. Recording URL: {$call->recording_url}";
+        try {
+            $call = $this->callRepository->getCall($request->input('CallSid'));
 
-        $this->twilio->messages->create(
-            $this->agentNumber,
-            ['from' => $this->fromNumber, 'body' => $message]
-        );
+            $request->merge(['agent_number' => $this->agentNumber]);
+
+            $call = $this->callRepository->updateCall($call, $request);
+
+            $message = $this->getRecordingMessage($call->from, $call->recording_url);
+
+            $this->sendAgentText($message);
+
+            return response('OK');
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
-    public function processStatus($request)
+    public function sendAgentText($message): void
     {
-        $callSid = $request->input('CallSid');
-
-        $call = $this->callRepository->getCall($callSid);
-
-        $callInfo = $this->twilio->calls($call->sid)->fetch()->fetch();
-
-        $status = $callInfo->status;
-
-        $request->merge([
-            'call_raw' => $callInfo->toArray(),
-            'call_status' => $status,
-            'agent_number' => $this->agentNumber
-        ]);
-
-        $this->callRepository->updateCall($call, $request);
-
-        return response('OK');
+        try {
+            $this->callProvider->sendSms($this->agentNumber, $message);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
     }
 
+    public function processStatus($request): Response
+    {
+        try {
+            $callSid = $request->input('CallSid');
+
+            $call = $this->callRepository->getCall($callSid);
+
+            $callInfo = $this->callProvider->getCallInfo($callSid);
+
+            $status = $callInfo->status;
+
+            $request->merge([
+                'call_raw' => $callInfo->toArray(),
+                'call_status' => $status,
+                'agent_number' => $this->agentNumber
+            ]);
+
+            $this->callRepository->updateCall($call, $request);
+
+            return response('OK');
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
+    }
+
+    private function getRecordingMessage(String $from, String $recordingUrl): String
+    {
+        return "New voicemail from {$from}. Recording URL: {$recordingUrl}";
+    }
+
+    private function getMessagesForIncomingCall(): array
+    {
+        return [
+            'Press 1 to speak to an agent.',
+            'Press 2 to leave a voicemail.'
+        ];
+    }
+
+    private function calculateNumDigits($messages): int
+    {
+        $numDigits = 0;
+
+        foreach ($messages as $message) {
+            $numDigits += strlen($message);
+        }
+
+        return ceil(log10($numDigits + 1));
+    }
 }
