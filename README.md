@@ -50,3 +50,22 @@ Call from a Verified Number in Twilio to the Rented Number `TWILIO_NUMBER` and l
 ### Unit Testing
 
 Run tests: `./vendor/bin/sail pest`
+
+## Software Architecture
+
+This application was developed using the `Facade and Strategy Design Patterns`.
+
+This allows me to create a class `CallManager.php`, as a facade and create a service `TwilioProvider.php`, that implements the `CallProviderInterface.php` contract.
+
+This enables us, in the future, to change or implement another CPASS Provider such as VONAGE or any other. Following the Strategy Design Pattern, we would create a `VonageProvider.php` class that implements the methods of the `CallProviderInterface.php` contract. Simply changing it in the configuration file would make everything transparent since `CallManager.php` is the class that manages the functionality under Dependency Injection of the CallProviderInterface within the constructor.
+
+Additionally, it is registered within the Service Container/Provider: AppServiceProvider and CallServiceProvider
+
+## Application Flow
+
+1. A call is made from a number to the rented Twilio number.
+2. Twilio launches it to the configured webhook (which is our application).
+3. We receive the information and generate the voice response (from the code) with the two options (forward call or leave a voicemail).
+4. If option 1 (forward call) is selected, we forward it to the defined agent's number.
+5. If option 2 (leave a voicemail) is selected, a beep will be heard, and the person will speak, recording the message. Finally, we send "Thank you, goodbye," and close the call.
+6. As we also have the CallStatus webhook configured, when the call ends, it launches to the webhook (another endpoint) where we receive all the final status of the call and record it in the database.
