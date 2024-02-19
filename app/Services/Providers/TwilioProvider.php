@@ -9,10 +9,10 @@ use Twilio\TwiML\VoiceResponse;
 
 class TwilioProvider implements CallProviderInterface
 {
-    protected $twilio;
+    public $twilio;
     protected $voiceResponse;
     protected $agentNumber;
-    protected $fromNumber;
+    public $fromNumber;
 
     // Empty constructor
     public function __construct()
@@ -23,7 +23,7 @@ class TwilioProvider implements CallProviderInterface
         $this->agentNumber = config('services.twilio.agent_number');
     }
 
-    public function processIncomingCall(Int $numDigits, String $action, array $messages): Response
+    public function processIncomingCall(Int $numDigits, String $action, array $messages)
     {
         $gather = $this->voiceResponse->gather([
                 'numDigits' => $numDigits,
@@ -34,28 +34,28 @@ class TwilioProvider implements CallProviderInterface
             $gather->say($message);
         }
 
-        return response($this->voiceResponse);
+        return $this->voiceResponse;
     }
 
-    public function finishCall(String $message): Response
+    public function finishCall(String $message)
     {
         $this->voiceResponse->say($message);
 
-        return response($this->voiceResponse);
+        return $this->voiceResponse;
     }
 
-    public function forwardCall(String $to): Response
+    public function forwardCall(String $to)
     {
         $this->voiceResponse->dial($to);
 
-        return response($this->voiceResponse);
+        return $this->voiceResponse;
     }
 
-    public function recordVoicemail(): Response
+    public function recordVoicemail(String $callbackUrl)
     {
-        $this->voiceResponse->record(['recordingStatusCallback' => route('handle-recording')]);
+        $this->voiceResponse->record(['recordingStatusCallback' => $callbackUrl]);
 
-        return response($this->voiceResponse);
+        return $this->voiceResponse;
     }
 
     public function sendSms(String $to, String $message): void

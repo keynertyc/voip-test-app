@@ -34,7 +34,9 @@ class CallManager implements CallServiceInterface
             $messages = $this->getMessagesForIncomingCall();
             $numDigits = $this->calculateNumDigits($messages);
 
-            return $this->callProvider->processIncomingCall($numDigits, route('call-options'), $messages);
+            $voiceResponse = $this->callProvider->processIncomingCall($numDigits, route('call-options'), $messages);
+
+            return response($voiceResponse);
         } catch (\Exception $e) {
             throw new CallHandlerException($e->getMessage(), $e->getCode());
         }
@@ -44,39 +46,14 @@ class CallManager implements CallServiceInterface
     {
         try {
             if ($request->input('Digits') == 1) {
-                return $this->forwardCall($this->agentNumber);
+                $voiceResponse = $this->forwardCall($this->agentNumber);
             } elseif ($request->input('Digits') == 2) {
-                return $this->recordVoicemail($request);
+                $voiceResponse = $this->recordVoicemail();
             } else {
-                return $this->finishCall('Thank you, goodbye.');
+                $voiceResponse = $this->finishCall('Thank you, goodbye.');
             }
-        } catch (\Exception $e) {
-            throw new CallHandlerException($e->getMessage(), $e->getCode());
-        }
-    }
 
-    public function finishCall(String $message): Response
-    {
-        try {
-            return $this->callProvider->finishCall($message);
-        } catch (\Exception $e) {
-            throw new CallHandlerException($e->getMessage(), $e->getCode());
-        }
-    }
-
-    public function forwardCall(String $to): Response
-    {
-        try {
-            return $this->callProvider->forwardCall($to);
-        } catch (\Exception $e) {
-            throw new CallHandlerException($e->getMessage(), $e->getCode());
-        }
-    }
-
-    public function recordVoicemail($request): Response
-    {
-        try {
-            return $this->callProvider->recordVoicemail($request);
+            return response($voiceResponse);
         } catch (\Exception $e) {
             throw new CallHandlerException($e->getMessage(), $e->getCode());
         }
@@ -96,15 +73,6 @@ class CallManager implements CallServiceInterface
             $this->sendAgentText($message);
 
             return response('OK');
-        } catch (\Exception $e) {
-            throw new CallHandlerException($e->getMessage(), $e->getCode());
-        }
-    }
-
-    public function sendAgentText($message): void
-    {
-        try {
-            $this->callProvider->sendSms($this->agentNumber, $message);
         } catch (\Exception $e) {
             throw new CallHandlerException($e->getMessage(), $e->getCode());
         }
@@ -130,6 +98,42 @@ class CallManager implements CallServiceInterface
             $this->callRepository->updateCall($call, $request);
 
             return response('OK');
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
+    }
+
+    private function finishCall(String $message)
+    {
+        try {
+            return $this->callProvider->finishCall($message);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
+    }
+
+    private function forwardCall(String $to)
+    {
+        try {
+            return $this->callProvider->forwardCall($to);
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
+    }
+
+    private function recordVoicemail()
+    {
+        try {
+            return $this->callProvider->recordVoicemail(route('handle-recording'));
+        } catch (\Exception $e) {
+            throw new CallHandlerException($e->getMessage(), $e->getCode());
+        }
+    }
+
+    private function sendAgentText($message): void
+    {
+        try {
+            $this->callProvider->sendSms($this->agentNumber, $message);
         } catch (\Exception $e) {
             throw new CallHandlerException($e->getMessage(), $e->getCode());
         }
