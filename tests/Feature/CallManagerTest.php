@@ -20,10 +20,12 @@ it('processes incoming call', function () {
 
     $callRepository->shouldReceive('createCall')->once();
 
+    $actionUrl = env('APP_URL') . '/api/call-options';
+
     $callProvider->shouldReceive('processIncomingCall')->once()
         ->with(
             2,
-            'http://test-app.test/api/call-options',
+            $actionUrl,
             [0 => 'Press 1 to speak to an agent.', 1 => 'Press 2 to leave a voicemail.']
         )
         ->andReturn($voiceResponse);
